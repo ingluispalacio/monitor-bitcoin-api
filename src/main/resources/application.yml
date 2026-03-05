@@ -7,7 +7,7 @@ server:
   port: 7077
 services:
   coingecko:
-    base-url: https://api.coingecko.com/api/v3
+    base-url: https://api.coingecko.com/api/v3/
 jwt:
   secret: mySuperSecretKeyForJwtCryptoMonitor123456ABCDEF123456
   expiration: 3600000 # 1 hora en milisegundos

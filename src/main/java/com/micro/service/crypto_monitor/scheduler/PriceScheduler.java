@@ -1,38 +1,42 @@
 package com.micro.service.crypto_monitor.scheduler;
 
-import com.micro.service.crypto_monitor.callservice.CallServicePriceHttp;
+import com.micro.service.crypto_monitor.business.PriceService;
 import com.micro.service.crypto_monitor.enums.EventType;
 import com.micro.service.crypto_monitor.websocket.EventBus;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.HashMap;
 import java.util.Map;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
+@RequiredArgsConstructor(onConstructor_ = @Autowired)
 @Slf4j
 public class PriceScheduler {
 
-    private final CallServicePriceHttp callServicePriceHttp;
+    private final PriceService priceService;
     private final EventBus eventBus;
 
     @Scheduled(fixedRate = 5000)
     public void broadcastBitcoinPrice() {
+
         log.info("📡 Iniciando consulta a CoinGecko...");
 
-        callServicePriceHttp.getBitcoinPrice()
-                .doOnError(e -> log.error("❌ Error en la llamada HTTP externa: {}", e.getMessage()))
+        priceService.getBitcoinPrice()
+                .doOnError(e -> log.error("Error en llamada externa: {}", e.getMessage()))
                 .subscribe(price -> {
+
                     if (price == null) {
-                        log.warn("⚠️ CoinGecko respondió, pero el precio es NULL");
+                        log.warn("Precio NULL recibido");
                         return;
                     }
 
-                    log.info("💰 PRECIO RECIBIDO: {}", price);
+                    log.info("Precio recibido: {}", price);
 
                     Map<String, Object> data = new HashMap<>();
                     data.put("symbol", "BTC");
@@ -40,7 +44,8 @@ public class PriceScheduler {
                     data.put("price", price);
                     data.put("timestamp", System.currentTimeMillis());
 
-                    log.info("📤 Publicando en EventBus: {}", data);
+                    log.info("Publicando evento en EventBus");
+
                     eventBus.publish(EventType.PRICE_UPDATE, data);
                 });
     }
