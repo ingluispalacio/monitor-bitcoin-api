@@ -34,20 +34,20 @@ public class OrderServiceImpl implements OrderService {
                 .clientName(clientName)
                 .cryptoName(crypto)
                 .amount(amt)
-                .price(price) // Tomado del DTO enviado por el cliente
-                .total(total) // Tomado del DTO enviado por el cliente
+                .price(price) 
+                .total(total) 
                 .status(OrderStatus.PENDING)
                 .createdAt(LocalDateTime.now())
                 .build();
 
         return repository.save(order)
                 .doOnSuccess(savedOrder -> {
-                    log.info("📦 Orden {} creada para el cliente {} con precio ${}",
+                    log.info("Orden {} creada para el cliente {} con precio ${}",
                             savedOrder.getId(), clientName, price);
                     // Notificamos al bus para que el Admin Dashboard vea la nueva orden
                     eventBus.publish(EventType.ORDER_CREATED, savedOrder);
                 })
-                .doOnError(e -> log.error("❌ Error al guardar la orden: {}", e.getMessage()));
+                .doOnError(e -> log.error("Error al guardar la orden: {}", e.getMessage()));
     }
 
     @Override
@@ -59,7 +59,7 @@ public class OrderServiceImpl implements OrderService {
                     return repository.save(order);
                 })
                 .doOnSuccess(order -> {
-                    log.info("✅ Orden {} aprobada", orderId);
+                    log.info("Orden {} aprobada", orderId);
                     eventBus.publish(EventType.ORDER_APPROVED, order);
                 });
     }
