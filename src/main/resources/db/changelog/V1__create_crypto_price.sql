@@ -1,0 +1,7 @@
+CREATE TABLE crypto_price (
+    id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
+    crypto_name VARCHAR(50) NOT NULL,
+    price DECIMAL(18,2) NOT NULL,
+    currency VARCHAR(10) NOT NULL,
+    created_at DATETIME2 DEFAULT SYSDATETIME()
+);

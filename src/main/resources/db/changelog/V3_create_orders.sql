@@ -1,0 +1,11 @@
+CREATE TABLE orders (
+    id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
+    client_name VARCHAR(100) NOT NULL,
+    crypto_name VARCHAR(50) NOT NULL,
+    amount DECIMAL(18,8) NOT NULL,
+    price DECIMAL(18,8) NOT NULL,
+    total DECIMAL(18,8) NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    created_at DATETIME2 DEFAULT SYSDATETIME(),
+    updated_at DATETIME2 NULL
+);
