@@ -8,6 +8,8 @@ import com.micro.service.crypto_monitor.repository.OrderRepository;
 import com.micro.service.crypto_monitor.websocket.EventBus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -17,7 +19,7 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Service
-@RequiredArgsConstructor
+@RequiredArgsConstructor(onConstructor_ = @Autowired)
 @Slf4j
 public class OrderServiceImpl implements OrderService {
 
