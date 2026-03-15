@@ -1,22 +1,25 @@
 package com.micro.service.crypto_monitor.controllers;
 
 import com.micro.service.crypto_monitor.business.UserService;
+import com.micro.service.crypto_monitor.dto.ApiResponseDTO;
 import com.micro.service.crypto_monitor.dto.UserRequestDTO;
 import com.micro.service.crypto_monitor.dto.UserResponseDTO;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
-
-import java.util.UUID;
-
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+
+import reactor.core.publisher.Mono;
+
+import java.util.List;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("${application.request.mappings}/users")
 @RequiredArgsConstructor
+@Slf4j
 @Tag(name = "Usuarios", description = "Gestión de usuarios del sistema (solo ADMIN)")
 public class UserController {
 
@@ -24,29 +27,22 @@ public class UserController {
 
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<UserResponseDTO> create(@RequestBody UserRequestDTO dto) {
-        System.out.println("🔥🔥🔥 CREATE CONTROLLER - DTO recibido:");
-        System.out.println("   name: " + dto.getName());
-        System.out.println("   lastname: " + dto.getLastname());
-        System.out.println("   email: " + dto.getEmail());
-        System.out.println("   username: " + dto.getUsername());
-        System.out.println("   role: " + dto.getRole());
-        System.out.println("   password: " + (dto.getPassword() != null ? "PROVIDED" : "NULL"));
-        
-        return userService.create(dto)
-            .doOnSuccess(user -> System.out.println("✅ Usuario creado: " + user))
-            .doOnError(error -> System.err.println("❌ Error en create: " + error.getMessage()));
+    public Mono<ApiResponseDTO<UserResponseDTO>> create(@RequestBody UserRequestDTO dto) {
+        log.info("Inicio controller create User con request -> {}", dto);
+        return userService.create(dto);
     }
 
     @GetMapping
     @PreAuthorize("hasRole('ADMIN')")
-    public Flux<UserResponseDTO> findAll() {
+    public Mono<ApiResponseDTO<List<UserResponseDTO>>> findAll() {
+        log.info("Inicio controller findAll User");
         return userService.findAll();
     }
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<Void> delete(@PathVariable UUID id) {
+    public Mono<ApiResponseDTO<Void>> delete(@PathVariable UUID id) {
+        log.info("Inicio controller delete User, id={}", id);
         return userService.delete(id);
     }
 }
