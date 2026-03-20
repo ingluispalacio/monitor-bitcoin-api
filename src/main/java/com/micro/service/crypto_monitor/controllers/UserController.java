@@ -6,6 +6,7 @@ import com.micro.service.crypto_monitor.dto.UserRequestDTO;
 import com.micro.service.crypto_monitor.dto.UserResponseDTO;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -27,7 +28,7 @@ public class UserController {
 
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<ApiResponseDTO<UserResponseDTO>> create(@RequestBody UserRequestDTO dto) {
+    public Mono<ApiResponseDTO<UserResponseDTO>> create(@Valid @RequestBody UserRequestDTO dto) {
         log.info("Inicio controller create User con request -> {}", dto);
         return userService.create(dto);
     }

@@ -2,7 +2,8 @@ package com.micro.service.crypto_monitor.controllers;
 
 import com.micro.service.crypto_monitor.business.FeatureToggleService;
 import com.micro.service.crypto_monitor.dto.ApiResponseDTO;
-import com.micro.service.crypto_monitor.model.FeatureToggle;
+import com.micro.service.crypto_monitor.dto.FeatureToggleDTO;
+
 
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -26,14 +27,14 @@ public class FeatureToggleController {
     // Obtener todos
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'CLIENT')")
-    public Mono<ApiResponseDTO<List<FeatureToggle>>> getAll() {
+    public Mono<ApiResponseDTO<List<FeatureToggleDTO>>> getAll() {
         log.info("Inicio controller getAll FeatureToggle");
         return featureToggleService.getAll();
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<ApiResponseDTO<FeatureToggle>> getById(@PathVariable UUID id) {
+    public Mono<ApiResponseDTO<FeatureToggleDTO>> getById(@PathVariable UUID id) {
         log.info("Inicio controller getById FeatureToggle, id={}", id);
         return featureToggleService.getById(id);
     }
@@ -41,7 +42,7 @@ public class FeatureToggleController {
 
     @GetMapping("/module/{moduleName}")
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<ApiResponseDTO<FeatureToggle>> getByModuleName(@PathVariable String moduleName) {
+    public Mono<ApiResponseDTO<FeatureToggleDTO>> getByModuleName(@PathVariable String moduleName) {
         log.info("Inicio controller getByModuleName FeatureToggle, moduleName={}", moduleName);
         return featureToggleService.getByModuleName(moduleName);
     }
@@ -56,14 +57,14 @@ public class FeatureToggleController {
 
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<ApiResponseDTO<FeatureToggle>> create(@RequestBody FeatureToggle toggle) {
+    public Mono<ApiResponseDTO<FeatureToggleDTO>> create(@RequestBody FeatureToggleDTO toggle) {
         log.info("Inicio controller create FeatureToggle con request -> {}", toggle);
         return featureToggleService.create(toggle);
     }
 
     @PutMapping("/{moduleName}/activate")
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<ApiResponseDTO<FeatureToggle>> activate(@PathVariable String moduleName) {
+    public Mono<ApiResponseDTO<FeatureToggleDTO>> activate(@PathVariable String moduleName) {
         log.info("Inicio controller activate FeatureToggle, moduleName={}", moduleName);
         return featureToggleService.activate(moduleName);
     }
@@ -71,7 +72,7 @@ public class FeatureToggleController {
 
     @PutMapping("/{moduleName}/deactivate")
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<ApiResponseDTO<FeatureToggle>> deactivate(@PathVariable String moduleName) {
+    public Mono<ApiResponseDTO<FeatureToggleDTO>> deactivate(@PathVariable String moduleName) {
         log.info("Inicio controller deactivate FeatureToggle, moduleName={}", moduleName);
         return featureToggleService.deactivate(moduleName);
     }
@@ -79,8 +80,8 @@ public class FeatureToggleController {
 
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<ApiResponseDTO<FeatureToggle>> update(@PathVariable UUID id,
-                                                       @RequestBody FeatureToggle toggle) {
+    public Mono<ApiResponseDTO<FeatureToggleDTO>> update(@PathVariable UUID id,
+                                                       @RequestBody FeatureToggleDTO toggle) {
         log.info("Inicio controller update FeatureToggle, id={}, request-> {}", id, toggle);
         return featureToggleService.update(id, toggle);
     }

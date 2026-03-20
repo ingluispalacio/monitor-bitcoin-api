@@ -3,8 +3,11 @@ package com.micro.service.crypto_monitor.business.impl;
 import com.micro.service.crypto_monitor.business.OrderService;
 import com.micro.service.crypto_monitor.business.FeatureToggleService;
 import com.micro.service.crypto_monitor.dto.ApiResponseDTO;
+import com.micro.service.crypto_monitor.dto.OrderRequestDTO;
+import com.micro.service.crypto_monitor.dto.OrderResponseDTO;
 import com.micro.service.crypto_monitor.enums.EventType;
 import com.micro.service.crypto_monitor.enums.OrderStatus;
+import com.micro.service.crypto_monitor.mapper.OrderMapper;
 import com.micro.service.crypto_monitor.model.Order;
 import com.micro.service.crypto_monitor.repository.OrderRepository;
 import com.micro.service.crypto_monitor.websocket.EventBus;
@@ -26,306 +29,332 @@ import reactor.core.publisher.Mono;
 @Slf4j
 public class OrderServiceImpl implements OrderService {
 
-    private final OrderRepository repository;
-    private final EventBus eventBus;
-    private final FeatureToggleService featureToggleService;
+        private final OrderRepository repository;
+        private final EventBus eventBus;
+        private final FeatureToggleService featureToggleService;
+        private final OrderMapper orderMapper;
 
-    @Override
-    public Mono<ApiResponseDTO<Order>> createOrder(String clientName, String crypto, String amount, BigDecimal price,
-            BigDecimal total) {
+        @Override
+        public Mono<ApiResponseDTO<OrderResponseDTO>> createOrder(OrderRequestDTO dto) {
 
-        log.info("SERVICIO ORDEN - CREAR - Iniciando creación de orden para cliente={} crypto={}", clientName, crypto);
+                log.info("SERVICIO ORDEN - CREAR - cliente={} crypto={}",
+                                dto.getClientName(), dto.getCryptoName());
 
-        BigDecimal amt = new BigDecimal(amount);
+                // 🔥 convertir DTO → Entity (ya calcula total, status y fechas en el mapper)
+                Order order = orderMapper.toEntity(dto);
 
-        Order order = Order.builder()
-                .clientName(clientName)
-                .cryptoName(crypto)
-                .amount(amt)
-                .price(price)
-                .total(total)
-                .status(OrderStatus.PENDING)
-                .createdAt(LocalDateTime.now())
-                .build();
+                return repository.save(order)
+                                .doOnSuccess(savedOrder -> {
+                                        log.info("ORDEN CREADA id={} cliente={} total={}",
+                                                        savedOrder.getId(),
+                                                        savedOrder.getClientName(),
+                                                        savedOrder.getTotal());
 
-        return repository.save(order)
-                .doOnSuccess(savedOrder -> {
-                    log.info("SERVICIO ORDEN - CREAR - Orden creada id={} cliente={} precio=${}",
-                            savedOrder.getId(), clientName, price);
+                                        // 🔥 evento
+                                        eventBus.publish(EventType.ORDER_CREATED, savedOrder);
+                                })
+                                .map(savedOrder -> ApiResponseDTO.<OrderResponseDTO>builder()
+                                                .success(true)
+                                                .message("Orden creada correctamente")
+                                                .data(orderMapper.toDTO(savedOrder)) // ✅ Entity → DTO
+                                                .timestamp(LocalDateTime.now())
+                                                .build())
+                                .onErrorResume(ex -> {
+                                        log.error("ERROR CREANDO ORDEN cliente={} error={}",
+                                                        dto.getClientName(), ex.getMessage(), ex);
 
-                    log.debug("SERVICIO ORDEN - EVENTO - Publicando evento ORDER_CREATED id={}", savedOrder.getId());
-                    eventBus.publish(EventType.ORDER_CREATED, savedOrder);
-                })
-                .doOnError(e -> log.error("SERVICIO ORDEN - CREAR - Error al guardar orden cliente={} error={}",
-                        clientName, e.getMessage(), e))
-                .map(savedOrder -> ApiResponseDTO.<Order>builder()
-                        .success(true)
-                        .message("Orden creada correctamente")
-                        .data(savedOrder)
-                        .timestamp(LocalDateTime.now())
-                        .build())
-                .onErrorResume(ex -> Mono.just(ApiResponseDTO.<Order>builder()
-                        .success(false)
-                        .message(ex.getMessage())
-                        .data(null)
-                        .timestamp(LocalDateTime.now())
-                        .build()));
-    }
+                                        return Mono.just(ApiResponseDTO.<OrderResponseDTO>builder()
+                                                        .success(false)
+                                                        .message(ex.getMessage())
+                                                        .data(null)
+                                                        .timestamp(LocalDateTime.now())
+                                                        .build());
+                                });
+        }
 
-    @Override
-    public Mono<ApiResponseDTO<Order>> createOrderWithToggleCheck(String clientName, String crypto, String amount,
-            BigDecimal price, BigDecimal total) {
+        @Override
+        public Mono<ApiResponseDTO<OrderResponseDTO>> createOrderWithToggleCheck(OrderRequestDTO dto) {
 
-        log.info("SERVICIO ORDEN - CREAR CON TOGGLE - Verificando feature toggle para cliente={}", clientName);
+                log.info("SERVICIO ORDEN - CREAR CON TOGGLE - cliente={} crypto={}",
+                                dto.getClientName(), dto.getCryptoName());
 
-        return featureToggleService.isActive("CRYPTO_MONITOR")
-                .flatMap(response -> {
+                return featureToggleService.isActive("CRYPTO_MONITOR")
+                                .flatMap(response -> {
 
-                    log.debug("SERVICIO ORDEN - TOGGLE - Estado del toggle CRYPTO_MONITOR={}", response.getData());
+                                        log.debug("SERVICIO ORDEN - TOGGLE - CRYPTO_MONITOR={}", response.getData());
 
-                    if (!response.getData()) {
-                        log.warn("SERVICIO ORDEN - TOGGLE - Sistema de compras deshabilitado");
-                        return Mono.error(new RuntimeException("El sistema de compras está deshabilitado."));
-                    }
+                                        if (!Boolean.TRUE.equals(response.getData())) {
+                                                log.warn("SERVICIO ORDEN - TOGGLE - Sistema de compras deshabilitado");
+                                                return Mono.error(new RuntimeException(
+                                                                "El sistema de compras está deshabilitado."));
+                                        }
 
-                    return createOrder(clientName, crypto, amount, price, total);
-                })
-                .doOnNext(resp -> log.info(
-                        "SERVICIO ORDEN - CREAR CON TOGGLE - Resultado cliente={} success={} mensaje={}",
-                        clientName, resp.isSuccess(), resp.getMessage()))
-                .onErrorResume(ex -> {
+                                        return createOrder(dto);
+                                })
+                                .doOnNext(resp -> log.info(
+                                                "SERVICIO ORDEN - CREAR CON TOGGLE - cliente={} success={} mensaje={}",
+                                                dto.getClientName(), resp.isSuccess(), resp.getMessage()))
+                                .onErrorResume(ex -> {
 
-                    log.error("SERVICIO ORDEN - CREAR CON TOGGLE - Error cliente={} error={}",
-                            clientName, ex.getMessage(), ex);
+                                        log.error("SERVICIO ORDEN - CREAR CON TOGGLE - cliente={} error={}",
+                                                        dto.getClientName(), ex.getMessage(), ex);
 
-                    return Mono.just(ApiResponseDTO.<Order>builder()
-                            .success(false)
-                            .message(ex.getMessage())
-                            .data(null)
-                            .timestamp(LocalDateTime.now())
-                            .build());
-                });
-    }
+                                        return Mono.just(ApiResponseDTO.<OrderResponseDTO>builder()
+                                                        .success(false)
+                                                        .message(ex.getMessage())
+                                                        .data(null)
+                                                        .timestamp(LocalDateTime.now())
+                                                        .build());
+                                });
+        }
 
-    @Override
-    public Mono<ApiResponseDTO<Order>> approveOrder(UUID orderId) {
+        @Override
+        public Mono<ApiResponseDTO<OrderResponseDTO>> approveOrder(UUID orderId) {
 
-        log.info("SERVICIO ORDEN - APROBAR - Iniciando aprobación de orden id={}", orderId);
+                log.info("SERVICIO ORDEN - APROBAR - id={}", orderId);
 
-        return repository.findById(orderId)
-                .switchIfEmpty(Mono.error(new RuntimeException("Orden no encontrada")))
-                .flatMap(order -> {
-                    order.setStatus(OrderStatus.APPROVED);
-                    order.setUpdatedAt(LocalDateTime.now());
-                    return repository.save(order);
-                })
-                .doOnSuccess(order -> {
+                return repository.findById(orderId)
+                                .switchIfEmpty(Mono.error(new RuntimeException("Orden no encontrada")))
+                                .flatMap(order -> {
+                                        order.setStatus(OrderStatus.APPROVED);
+                                        order.setUpdatedAt(LocalDateTime.now());
+                                        return repository.save(order);
+                                })
+                                .doOnSuccess(savedOrder -> {
+                                        log.info("SERVICIO ORDEN - APROBAR - Orden aprobada id={}", orderId);
+                                        eventBus.publish(EventType.ORDER_APPROVED, savedOrder);
+                                })
+                                .map(orderMapper::toDTO)
+                                .map(dto -> ApiResponseDTO.<OrderResponseDTO>builder()
+                                                .success(true)
+                                                .message("Orden aprobada correctamente")
+                                                .data(dto)
+                                                .timestamp(LocalDateTime.now())
+                                                .build())
+                                .onErrorResume(ex -> {
+                                        log.error("SERVICIO ORDEN - APROBAR - Error id={} error={}", orderId,
+                                                        ex.getMessage(), ex);
 
-                    log.info("SERVICIO ORDEN - APROBAR - Orden aprobada id={}", orderId);
+                                        return Mono.just(ApiResponseDTO.<OrderResponseDTO>builder()
+                                                        .success(false)
+                                                        .message(ex.getMessage())
+                                                        .data(null)
+                                                        .timestamp(LocalDateTime.now())
+                                                        .build());
+                                });
+        }
 
-                    log.debug("SERVICIO ORDEN - EVENTO - Publicando evento ORDER_APPROVED id={}", orderId);
-                    eventBus.publish(EventType.ORDER_APPROVED, order);
-                })
-                .map(order -> ApiResponseDTO.<Order>builder()
-                        .success(true)
-                        .message("Orden aprobada correctamente")
-                        .data(order)
-                        .timestamp(LocalDateTime.now())
-                        .build())
-                .onErrorResume(ex -> {
+        @Override
+        public Mono<ApiResponseDTO<OrderResponseDTO>> rejectOrder(UUID orderId) {
 
-                    log.error("SERVICIO ORDEN - APROBAR - Error id={} error={}", orderId, ex.getMessage(), ex);
+                log.info("SERVICIO ORDEN - RECHAZAR - Iniciando rechazo de orden id={}", orderId);
 
-                    return Mono.just(ApiResponseDTO.<Order>builder()
-                            .success(false)
-                            .message(ex.getMessage())
-                            .data(null)
-                            .timestamp(LocalDateTime.now())
-                            .build());
-                });
-    }
+                return repository.findById(orderId)
+                                .switchIfEmpty(Mono.error(new RuntimeException("Orden no encontrada")))
+                                .flatMap(order -> {
+                                        order.setStatus(OrderStatus.REJECTED);
+                                        order.setUpdatedAt(LocalDateTime.now());
+                                        return repository.save(order);
+                                })
+                                .map(orderMapper::toDTO)
+                                .doOnSuccess(order -> {
 
-    @Override
-    public Mono<ApiResponseDTO<Order>> rejectOrder(UUID orderId) {
+                                        log.info("SERVICIO ORDEN - RECHAZAR - Orden rechazada id={}", orderId);
 
-        log.info("SERVICIO ORDEN - RECHAZAR - Iniciando rechazo de orden id={}", orderId);
+                                        log.debug("SERVICIO ORDEN - EVENTO - Publicando evento ORDER_REJECTED id={}",
+                                                        orderId);
+                                        eventBus.publish(EventType.ORDER_REJECTED, order);
+                                })
+                                .map(order -> ApiResponseDTO.<OrderResponseDTO>builder()
+                                                .success(true)
+                                                .message("Orden rechazada correctamente")
+                                                .data(order)
+                                                .timestamp(LocalDateTime.now())
+                                                .build())
+                                .onErrorResume(ex -> {
 
-        return repository.findById(orderId)
-                .switchIfEmpty(Mono.error(new RuntimeException("Orden no encontrada")))
-                .flatMap(order -> {
-                    order.setStatus(OrderStatus.REJECTED);
-                    order.setUpdatedAt(LocalDateTime.now());
-                    return repository.save(order);
-                })
-                .doOnSuccess(order -> {
+                                        log.error("SERVICIO ORDEN - RECHAZAR - Error id={} error={}", orderId,
+                                                        ex.getMessage(), ex);
 
-                    log.info("SERVICIO ORDEN - RECHAZAR - Orden rechazada id={}", orderId);
+                                        return Mono.just(ApiResponseDTO.<OrderResponseDTO>builder()
+                                                        .success(false)
+                                                        .message(ex.getMessage())
+                                                        .data(null)
+                                                        .timestamp(LocalDateTime.now())
+                                                        .build());
+                                });
+        }
 
-                    log.debug("SERVICIO ORDEN - EVENTO - Publicando evento ORDER_REJECTED id={}", orderId);
-                    eventBus.publish(EventType.ORDER_REJECTED, order);
-                })
-                .map(order -> ApiResponseDTO.<Order>builder()
-                        .success(true)
-                        .message("Orden rechazada correctamente")
-                        .data(order)
-                        .timestamp(LocalDateTime.now())
-                        .build())
-                .onErrorResume(ex -> {
+        @Override
+        public Mono<ApiResponseDTO<OrderResponseDTO>> updateOrderStatus(UUID orderId, String status) {
 
-                    log.error("SERVICIO ORDEN - RECHAZAR - Error id={} error={}", orderId, ex.getMessage(), ex);
+                log.info("SERVICIO ORDEN - UPDATE STATUS - id={} status={}", orderId, status);
 
-                    return Mono.just(ApiResponseDTO.<Order>builder()
-                            .success(false)
-                            .message(ex.getMessage())
-                            .data(null)
-                            .timestamp(LocalDateTime.now())
-                            .build());
-                });
-    }
+                return repository.findById(orderId)
+                                .switchIfEmpty(Mono.error(new RuntimeException("Orden no encontrada")))
+                                .flatMap(order -> {
 
-    @Override
-    public Mono<ApiResponseDTO<Order>> updateOrderStatus(UUID orderId, String status) {
-        return repository.findById(orderId)
-                .flatMap(order -> {
-                    order.setStatus(OrderStatus.valueOf(status));
-                    order.setUpdatedAt(LocalDateTime.now());
-                    return repository.save(order);
-                })
-                .doOnSuccess(order -> {
-                    log.info("📝 Orden {} estado actualizado a {}", orderId, status);
-                    eventBus.publish(EventType.ORDER_STATUS_UPDATED, order);
-                })
-                .map(order -> ApiResponseDTO.<Order>builder()
-                        .success(true)
-                        .message("Estado de orden actualizado correctamente")
-                        .data(order)
-                        .timestamp(LocalDateTime.now())
-                        .build())
-                .doOnNext(resp -> log.info("updateOrderStatus success id={} status={}", orderId, status))
-                .onErrorResume(ex -> {
-                    log.error("updateOrderStatus error id={}  status={} - {}", orderId, status, ex.getMessage());
-                    return Mono.just(ApiResponseDTO.<Order>builder()
-                            .success(false)
-                            .message(ex.getMessage())
-                            .data(null)
-                            .timestamp(LocalDateTime.now())
-                            .build());
-                });
-    }
+                                        OrderStatus newStatus;
+                                        try {
+                                                newStatus = OrderStatus.valueOf(status.toUpperCase());
+                                        } catch (IllegalArgumentException ex) {
+                                                return Mono.error(new RuntimeException("Estado inválido: " + status));
+                                        }
 
-    @Override
-    public Mono<ApiResponseDTO<Order>> cancelOrder(UUID orderId, String username) {
+                                        order.setStatus(newStatus);
+                                        order.setUpdatedAt(LocalDateTime.now());
 
-        log.info("SERVICIO ORDEN - CANCELAR - Solicitud cancelación id={} usuario={}", orderId, username);
+                                        return repository.save(order);
+                                })
+                                .doOnSuccess(savedOrder -> {
+                                        log.info("📝 Orden {} estado actualizado a {}", orderId, status);
+                                        eventBus.publish(EventType.ORDER_STATUS_UPDATED, savedOrder);
+                                })
+                                .map(orderMapper::toDTO)
+                                .map(dto -> ApiResponseDTO.<OrderResponseDTO>builder()
+                                                .success(true)
+                                                .message("Estado de orden actualizado correctamente")
+                                                .data(dto)
+                                                .timestamp(LocalDateTime.now())
+                                                .build())
+                                .doOnNext(resp -> log.info("updateOrderStatus success id={} status={}", orderId,
+                                                status))
+                                .onErrorResume(ex -> {
+                                        log.error("updateOrderStatus error id={} status={} - {}", orderId, status,
+                                                        ex.getMessage());
 
-        return repository.findById(orderId)
-                .switchIfEmpty(Mono.error(new RuntimeException("Orden no encontrada")))
-                .flatMap(order -> {
+                                        return Mono.just(ApiResponseDTO.<OrderResponseDTO>builder()
+                                                        .success(false)
+                                                        .message(ex.getMessage())
+                                                        .data(null)
+                                                        .timestamp(LocalDateTime.now())
+                                                        .build());
+                                });
+        }
 
-                    if (!order.getClientName().equals(username)) {
-                        log.warn("SERVICIO ORDEN - CANCELAR - Usuario no autorizado id={} usuario={}", orderId,
-                                username);
-                        return Mono.error(new RuntimeException("No autorizado o la orden no existe"));
-                    }
+        @Override
+        public Mono<ApiResponseDTO<OrderResponseDTO>> cancelOrder(UUID orderId, String username) {
 
-                    order.setStatus(OrderStatus.CANCELLED);
-                    order.setUpdatedAt(LocalDateTime.now());
-                    return repository.save(order);
-                })
-                .doOnSuccess(order -> {
+                log.info("SERVICIO ORDEN - CANCELAR - Solicitud cancelación id={} usuario={}", orderId, username);
 
-                    log.info("SERVICIO ORDEN - CANCELAR - Orden cancelada id={} usuario={}", orderId, username);
+                return repository.findById(orderId)
+                                .switchIfEmpty(Mono.error(new RuntimeException("Orden no encontrada")))
+                                .flatMap(order -> {
 
-                    eventBus.publish(EventType.ORDER_STATUS_UPDATED, order);
-                })
-                .map(order -> ApiResponseDTO.<Order>builder()
-                        .success(true)
-                        .message("Orden cancelada correctamente")
-                        .data(order)
-                        .timestamp(LocalDateTime.now())
-                        .build())
-                .onErrorResume(ex -> {
+                                        if (!order.getClientName().equals(username)) {
+                                                log.warn("SERVICIO ORDEN - CANCELAR - Usuario no autorizado id={} usuario={}",
+                                                                orderId,
+                                                                username);
+                                                return Mono.error(new RuntimeException(
+                                                                "No autorizado o la orden no existe"));
+                                        }
 
-                    log.error("SERVICIO ORDEN - CANCELAR - Error id={} usuario={} error={}",
-                            orderId, username, ex.getMessage(), ex);
+                                        order.setStatus(OrderStatus.CANCELLED);
+                                        order.setUpdatedAt(LocalDateTime.now());
+                                        return repository.save(order);
+                                })
+                                .map(orderMapper::toDTO)
+                                .doOnSuccess(order -> {
 
-                    return Mono.just(ApiResponseDTO.<Order>builder()
-                            .success(false)
-                            .message(ex.getMessage())
-                            .data(null)
-                            .timestamp(LocalDateTime.now())
-                            .build());
-                });
-    }
+                                        log.info("SERVICIO ORDEN - CANCELAR - Orden cancelada id={} usuario={}",
+                                                        orderId, username);
 
-    @Override
-    public Mono<ApiResponseDTO<List<Order>>> getAllOrders() {
-        return repository.findAllByOrderByCreatedAtDesc()
-                .collectList()
-                .map(list -> ApiResponseDTO.<List<Order>>builder()
-                        .success(true)
-                        .message("Todas las órdenes obtenidas correctamente")
-                        .data(list)
-                        .timestamp(LocalDateTime.now())
-                        .build())
-                .doOnNext(resp -> log.info("getAllOrders success count={}", resp.getData().size()))
-                .onErrorResume(ex -> {
-                    log.error("getAllOrders error: {}", ex.getMessage());
-                    return Mono.just(ApiResponseDTO.<List<Order>>builder()
-                            .success(false)
-                            .message(ex.getMessage())
-                            .data(null)
-                            .timestamp(LocalDateTime.now())
-                            .build());
-                });
-    }
+                                        eventBus.publish(EventType.ORDER_STATUS_UPDATED, order);
+                                })
+                                .map(order -> ApiResponseDTO.<OrderResponseDTO>builder()
+                                                .success(true)
+                                                .message("Orden cancelada correctamente")
+                                                .data(order)
+                                                .timestamp(LocalDateTime.now())
+                                                .build())
+                                .onErrorResume(ex -> {
 
-    @Override
-    public Mono<ApiResponseDTO<List<Order>>> getOrdersByStatus(OrderStatus status) {
-        return repository.findByStatusOrderByCreatedAtAsc(status)
-                .collectList()
-                .map(list -> ApiResponseDTO.<List<Order>>builder()
-                        .success(true)
-                        .message("Órdenes por estado obtenidas correctamente")
-                        .data(list)
-                        .timestamp(LocalDateTime.now())
-                        .build())
-                .doOnNext(
-                        resp -> log.info("getOrdersByStatus success status={} count={}", status, resp.getData().size()))
-                .onErrorResume(ex -> {
-                    log.error("getOrdersByStatus error status={} - {}", status, ex.getMessage());
-                    return Mono.just(ApiResponseDTO.<List<Order>>builder()
-                            .success(false)
-                            .message(ex.getMessage())
-                            .data(null)
-                            .timestamp(LocalDateTime.now())
-                            .build());
-                });
-    }
+                                        log.error("SERVICIO ORDEN - CANCELAR - Error id={} usuario={} error={}",
+                                                        orderId, username, ex.getMessage(), ex);
 
-    @Override
-    public Mono<ApiResponseDTO<List<Order>>> getOrdersByClientName(String clientName) {
-        log.info("Inicio service getOrdersByClientName clientName={}", clientName);
+                                        return Mono.just(ApiResponseDTO.<OrderResponseDTO>builder()
+                                                        .success(false)
+                                                        .message(ex.getMessage())
+                                                        .data(null)
+                                                        .timestamp(LocalDateTime.now())
+                                                        .build());
+                                });
+        }
 
-        return repository
-                .findByClientNameOrderByCreatedAtDesc(clientName)
-                .collectList()
-                .map(list -> ApiResponseDTO.<List<Order>>builder()
-                        .success(true)
-                        .message("Órdenes del cliente obtenidas correctamente")
-                        .data(list)
-                        .timestamp(LocalDateTime.now())
-                        .build())
-                .doOnNext(resp -> log.info("getOrdersByClientName success clientName={} count={}", clientName,
-                        resp.getData().size()))
-                .onErrorResume(ex -> {
-                    log.error("getOrdersByClientName error clientName={} - {}", clientName, ex.getMessage());
-                    return Mono.just(ApiResponseDTO.<List<Order>>builder()
-                            .success(false)
-                            .message(ex.getMessage())
-                            .data(null)
-                            .timestamp(LocalDateTime.now())
-                            .build());
-                });
-    }
+        @Override
+        public Mono<ApiResponseDTO<List<OrderResponseDTO>>> getAllOrders() {
+                return repository.findAllByOrderByCreatedAtDesc()
+                                .map(orderMapper::toDTO)
+                                .collectList()
+                                .map(list -> ApiResponseDTO.<List<OrderResponseDTO>>builder()
+                                                .success(true)
+                                                .message("Todas las órdenes obtenidas correctamente")
+                                                .data(list)
+                                                .timestamp(LocalDateTime.now())
+                                                .build())
+                                .doOnNext(resp -> log.info("getAllOrders success count={}", resp.getData().size()))
+                                .onErrorResume(ex -> {
+                                        log.error("getAllOrders error: {}", ex.getMessage());
+                                        return Mono.just(ApiResponseDTO.<List<OrderResponseDTO>>builder()
+                                                        .success(false)
+                                                        .message(ex.getMessage())
+                                                        .data(null)
+                                                        .timestamp(LocalDateTime.now())
+                                                        .build());
+                                });
+        }
+
+        @Override
+        public Mono<ApiResponseDTO<List<OrderResponseDTO>>> getOrdersByStatus(OrderStatus status) {
+                return repository.findByStatusOrderByCreatedAtAsc(status)
+                                .map(orderMapper::toDTO)
+                                .collectList()
+                                .map(list -> ApiResponseDTO.<List<OrderResponseDTO>>builder()
+                                                .success(true)
+                                                .message("Órdenes por estado obtenidas correctamente")
+                                                .data(list)
+                                                .timestamp(LocalDateTime.now())
+                                                .build())
+                                .doOnNext(
+                                                resp -> log.info("getOrdersByStatus success status={} count={}", status,
+                                                                resp.getData().size()))
+                                .onErrorResume(ex -> {
+                                        log.error("getOrdersByStatus error status={} - {}", status, ex.getMessage());
+                                        return Mono.just(ApiResponseDTO.<List<OrderResponseDTO>>builder()
+                                                        .success(false)
+                                                        .message(ex.getMessage())
+                                                        .data(null)
+                                                        .timestamp(LocalDateTime.now())
+                                                        .build());
+                                });
+        }
+
+        @Override
+        public Mono<ApiResponseDTO<List<OrderResponseDTO>>> getOrdersByClientName(String clientName) {
+                log.info("Inicio service getOrdersByClientName clientName={}", clientName);
+
+                return repository
+                                .findByClientNameOrderByCreatedAtDesc(clientName)
+                                .map(orderMapper::toDTO)
+                                .collectList()
+                                .map(list -> ApiResponseDTO.<List<OrderResponseDTO>>builder()
+                                                .success(true)
+                                                .message("Órdenes del cliente obtenidas correctamente")
+                                                .data(list)
+                                                .timestamp(LocalDateTime.now())
+                                                .build())
+                                .doOnNext(resp -> log.info("getOrdersByClientName success clientName={} count={}",
+                                                clientName,
+                                                resp.getData().size()))
+                                .onErrorResume(ex -> {
+                                        log.error("getOrdersByClientName error clientName={} - {}", clientName,
+                                                        ex.getMessage());
+                                        return Mono.just(ApiResponseDTO.<List<OrderResponseDTO>>builder()
+                                                        .success(false)
+                                                        .message(ex.getMessage())
+                                                        .data(null)
+                                                        .timestamp(LocalDateTime.now())
+                                                        .build());
+                                });
+        }
 }

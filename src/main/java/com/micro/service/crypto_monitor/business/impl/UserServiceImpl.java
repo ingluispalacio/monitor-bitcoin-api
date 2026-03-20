@@ -12,6 +12,7 @@ import com.micro.service.crypto_monitor.business.UserService;
 import com.micro.service.crypto_monitor.dto.ApiResponseDTO;
 import com.micro.service.crypto_monitor.dto.UserRequestDTO;
 import com.micro.service.crypto_monitor.dto.UserResponseDTO;
+import com.micro.service.crypto_monitor.mapper.UserMapper;
 import com.micro.service.crypto_monitor.model.User;
 import com.micro.service.crypto_monitor.repository.UserRepository;
 
@@ -26,69 +27,41 @@ public class UserServiceImpl implements UserService {
 
     private final UserRepository repository;
     private final PasswordEncoder passwordEncoder;
+    private final UserMapper userMapper;
 
     @Override
     public Mono<ApiResponseDTO<UserResponseDTO>> create(UserRequestDTO dto) {
 
-        log.info("SERVICIO USUARIO - CREAR - Solicitud recibida para username: {}", dto.getUsername());
-
-        if (dto.getUsername() == null || dto.getUsername().trim().isEmpty()) {
-            log.warn("CREAR USUARIO - El campo username es obligatorio");
-            return Mono.error(new IllegalArgumentException("Username es requerido"));
-        }
-
-        if (dto.getEmail() == null || dto.getEmail().trim().isEmpty()) {
-            log.warn("CREAR USUARIO - El campo email es obligatorio");
-            return Mono.error(new IllegalArgumentException("Email es requerido"));
-        }
-
-        if (dto.getPassword() == null || dto.getPassword().trim().isEmpty()) {
-            log.warn("CREAR USUARIO - El campo password es obligatorio");
-            return Mono.error(new IllegalArgumentException("Password es requerido"));
-        }
-
-        if (dto.getRole() == null) {
-            log.warn("CREAR USUARIO - El campo role es obligatorio");
-            return Mono.error(new IllegalArgumentException("Role es requerido"));
-        }
+        log.info("SERVICIO USUARIO - CREAR - username={}", dto.getUsername());
 
         return repository.findByUsername(dto.getUsername())
                 .flatMap(user -> {
-                    log.warn("CREAR USUARIO - El username ya existe: {}", user.getUsername());
+                    log.warn("Username ya existe: {}", dto.getUsername());
                     return Mono.error(new IllegalArgumentException("Username ya existe"));
                 })
                 .switchIfEmpty(
                         repository.findByEmail(dto.getEmail())
                                 .flatMap(user -> {
-                                    log.warn("CREAR USUARIO - El email ya existe: {}", user.getEmail());
+                                    log.warn("Email ya existe: {}", dto.getEmail());
                                     return Mono.error(new IllegalArgumentException("Email ya existe"));
                                 }))
-                .then(
-                        Mono.defer(() -> {
+                .then(Mono.defer(() -> {
 
-                            log.info("CREAR USUARIO - Creando nuevo usuario: {}", dto.getUsername());
+                    User newUser = userMapper.toEntity(dto);
 
-                            User newUser = User.builder()
-                                    .name(dto.getName())
-                                    .lastname(dto.getLastname())
-                                    .email(dto.getEmail())
-                                    .username(dto.getUsername())
-                                    .password(passwordEncoder.encode(dto.getPassword()))
-                                    .role(dto.getRole())
-                                    .active(dto.isActive())
-                                    .build();
+                    newUser.setPassword(passwordEncoder.encode(dto.getPassword()));
+                    newUser.setCreatedAt(LocalDateTime.now());
 
-                            return repository.save(newUser);
-                        }))
-                .doOnSuccess(user -> log.info("CREAR USUARIO - Usuario guardado correctamente con ID: {}", user.getId()))
-                .map(user -> mapToDTO(user))
-                .map(dtoResponse -> ApiResponseDTO.<UserResponseDTO>builder()
+                    return repository.save(newUser);
+                }))
+                .doOnSuccess(user -> log.info("Usuario creado id={}", user.getId()))
+                .map(userMapper::toDTO)
+                .map(response -> ApiResponseDTO.<UserResponseDTO>builder()
                         .success(true)
                         .message("Usuario creado correctamente")
-                        .data(dtoResponse)
+                        .data(response)
                         .timestamp(LocalDateTime.now())
                         .build())
-                .doOnError(error -> log.error("CREAR USUARIO - Error al crear usuario: {}", error.getMessage(), error))
                 .onErrorResume(ex -> Mono.just(ApiResponseDTO.<UserResponseDTO>builder()
                         .success(false)
                         .message(ex.getMessage())
@@ -103,7 +76,7 @@ public class UserServiceImpl implements UserService {
         log.info("SERVICIO USUARIO - CONSULTAR TODOS - Obteniendo lista de usuarios");
 
         return repository.findAll()
-                .map(this::mapToDTO)
+                .map(userMapper::toDTO)
                 .collectList()
                 .doOnSuccess(list -> log.info("CONSULTAR USUARIOS - Se obtuvieron {} usuarios", list.size()))
                 .map(list -> ApiResponseDTO.<List<UserResponseDTO>>builder()
@@ -112,7 +85,8 @@ public class UserServiceImpl implements UserService {
                         .data(list)
                         .timestamp(LocalDateTime.now())
                         .build())
-                .doOnError(error -> log.error("CONSULTAR USUARIOS - Error al obtener usuarios: {}", error.getMessage(), error))
+                .doOnError(error -> log.error("CONSULTAR USUARIOS - Error al obtener usuarios: {}", error.getMessage(),
+                        error))
                 .onErrorResume(ex -> Mono.just(ApiResponseDTO.<List<UserResponseDTO>>builder()
                         .success(false)
                         .message(ex.getMessage())
@@ -127,7 +101,7 @@ public class UserServiceImpl implements UserService {
         log.info("SERVICIO USUARIO - BUSCAR POR ID - Buscando usuario con ID: {}", id);
 
         return repository.findById(id)
-                .map(this::mapToDTO)
+                .map(userMapper::toDTO)
                 .doOnSuccess(user -> log.info("BUSCAR USUARIO - Usuario encontrado con ID: {}", id))
                 .map(dto -> ApiResponseDTO.<UserResponseDTO>builder()
                         .success(true)
@@ -144,7 +118,8 @@ public class UserServiceImpl implements UserService {
                             .timestamp(LocalDateTime.now())
                             .build());
                 }))
-                .doOnError(error -> log.error("BUSCAR USUARIO - Error al buscar usuario: {}", error.getMessage(), error))
+                .doOnError(
+                        error -> log.error("BUSCAR USUARIO - Error al buscar usuario: {}", error.getMessage(), error))
                 .onErrorResume(ex -> Mono.just(ApiResponseDTO.<UserResponseDTO>builder()
                         .success(false)
                         .message(ex.getMessage())
@@ -168,26 +143,13 @@ public class UserServiceImpl implements UserService {
                             .timestamp(LocalDateTime.now())
                             .build();
                 }))
-                .doOnError(error -> log.error("ELIMINAR USUARIO - Error al eliminar usuario {}: {}", id, error.getMessage(), error))
+                .doOnError(error -> log.error("ELIMINAR USUARIO - Error al eliminar usuario {}: {}", id,
+                        error.getMessage(), error))
                 .onErrorResume(ex -> Mono.just(ApiResponseDTO.<Void>builder()
                         .success(false)
                         .message(ex.getMessage())
                         .data(null)
                         .timestamp(LocalDateTime.now())
                         .build()));
-    }
-
-    private UserResponseDTO mapToDTO(User user) {
-
-        return UserResponseDTO.builder()
-                .id(user.getId())
-                .name(user.getName())
-                .lastname(user.getLastname())
-                .email(user.getEmail())
-                .username(user.getUsername())
-                .role(user.getRole())
-                .active(user.getActive())
-                .createdAt(user.getCreatedAt())
-                .build();
     }
 }

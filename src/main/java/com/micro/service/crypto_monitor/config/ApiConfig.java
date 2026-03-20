@@ -1,30 +1,23 @@
 package com.micro.service.crypto_monitor.config;
 
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-
-import com.micro.service.crypto_monitor.callservice.CoinGeckoHttpClient;
-
+import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 import retrofit2.Retrofit;
 import retrofit2.converter.gson.GsonConverterFactory;
 
-@Configuration
+@Component
+@RequiredArgsConstructor(onConstructor_ = @Autowired)
 public class ApiConfig {
 
-    @Value("${services.coingecko.base-url}")
-    private String COINGECKO_BASE_URL;
-   
-    @Bean
-    public Retrofit coinGeckoRetrofit() {
-        return new Retrofit.Builder()
-                .baseUrl(COINGECKO_BASE_URL)
-                .addConverterFactory(GsonConverterFactory.create())
-                .build();
+    public <T> T getApi(Class<T> apiClass, String baseUrl) {
+        return getRetrofit(baseUrl).create(apiClass);
     }
 
-    @Bean
-    public CoinGeckoHttpClient coinGeckoHttpClient(Retrofit coinGeckoRetrofit) {
-        return coinGeckoRetrofit.create(CoinGeckoHttpClient.class);
+    private Retrofit getRetrofit(String baseUrl) {
+        return new Retrofit.Builder()
+                .baseUrl(baseUrl)
+                .addConverterFactory(GsonConverterFactory.create())
+                .build();
     }
 }

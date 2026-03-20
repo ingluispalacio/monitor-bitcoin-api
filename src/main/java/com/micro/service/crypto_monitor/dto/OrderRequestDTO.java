@@ -19,5 +19,4 @@ public class OrderRequestDTO {
     private BigDecimal amount;
     private BigDecimal price;
     private BigDecimal total;
-    // private OrderStatus status;
 }
